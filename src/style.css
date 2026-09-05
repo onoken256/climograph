@@ -227,6 +227,7 @@ table.grid input:focus{background:color-mix(in srgb,var(--focus) 12%,var(--panel
 .pref-path:hover{fill:color-mix(in srgb,var(--focus) 22%,var(--map-fill))}
 .pref-path.selA{fill:var(--temp);stroke:var(--panel)}
 .pref-path.selB{fill:var(--prec-b);stroke:var(--panel)}
+.pref-path.bg{fill:var(--line-2);stroke:var(--map-line);cursor:default;pointer-events:none}
 
 .chiprow{display:flex;gap:8px;flex-wrap:wrap;min-height:32px}
 .chip{

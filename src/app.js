@@ -456,64 +456,98 @@ function syncInputs(){
   if(state.scale==="month") $("moLabel").textContent=`${MONTHS[state.monthOf]}（${DAYS_IN_MONTH[state.monthOf]}日）`;
 }
 
-/* ---------- 🔍モード: 日本 ---------- */
+/* ---------- 🔍モード: 選択画面（日本・世界 共通） ---------- */
 const JP_REGIONS=["北海道","東北","関東","中部","近畿","中国","四国","九州・沖縄"];
-const explore={sel:[]}; // 選ばれた都道府県名。0番目=A(赤系)・1番目=B(青緑系)
+const WORLD_REGIONS=["北アメリカ","南アメリカ","ヨーロッパ","アフリカ","アジア","オセアニア"];
+const explore={jpSel:[],worldSel:[]}; // 0番目=A(赤系)・1番目=B(青緑系)
 
+function exploreCfg(kind){
+  return kind==="jp"?{
+    map:JAPAN_MAP,climate:JAPAN_CLIMATE,regions:JP_REGIONS,sel:explore.jpSel,
+    mapHost:"jpmap",groupsHost:"prefGroups",chipsHost:"selectedChips",decideId:"jpDecide",
+    keyOf:c=>c.pref,labelOf:c=>c.pref,mapAria:"日本地図",emptyMsg:"とどうふけんを1〜2つ えらんでください",
+  }:{
+    map:WORLD_MAP,climate:WORLD_CLIMATE,regions:WORLD_REGIONS,sel:explore.worldSel,
+    mapHost:"worldmap",groupsHost:"countryGroups",chipsHost:"selectedChipsWorld",decideId:"worldDecide",
+    keyOf:c=>c.country,labelOf:c=>`${c.country}（${c.city}）`,mapAria:"世界地図",emptyMsg:"くにを1〜2つ えらんでください",
+  };
+}
 // 地図描画はここだけ差し替えれば良いように分離してある（タイル地図等への変更にも対応できる）
-function renderMap(){
-  const host=document.getElementById("jpmap");
-  if(!JAPAN_MAP){ host.innerHTML="<p>地図データがありません</p>"; return; }
-  const [vx,vy,vw,vh]=JAPAN_MAP.viewBox;
-  const o=[`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" role="img" aria-label="日本地図">`];
-  for(const p of JAPAN_MAP.prefectures){
-    const idx=explore.sel.indexOf(p.name);
+function renderExploreMap(kind){
+  const cfg=exploreCfg(kind), host=document.getElementById(cfg.mapHost);
+  if(!cfg.map){ host.innerHTML="<p>地図データがありません</p>"; return; }
+  const [vx,vy,vw,vh]=cfg.map.viewBox;
+  const shapes=cfg.map.prefectures||cfg.map.countries;
+  const o=[`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" role="img" aria-label="${cfg.mapAria}">`];
+  for(const p of shapes){
+    if(kind==="world"&&!p.matched){ o.push(`<path class="pref-path bg" d="${p.d}"/>`); continue; }
+    const idx=cfg.sel.indexOf(p.name);
     const cls=idx===0?"selA":idx===1?"selB":"";
-    o.push(`<path class="pref-path ${cls}" data-pref="${esc(p.name)}" d="${p.d}"><title>${esc(p.name)}</title></path>`);
+    o.push(`<path class="pref-path ${cls}" data-key="${esc(p.name)}" d="${p.d}"><title>${esc(p.name)}</title></path>`);
   }
   o.push("</svg>");
   host.innerHTML=o.join("");
 }
-function buildPrefGroups(){
-  if(!JAPAN_CLIMATE){ document.getElementById("prefGroups").innerHTML=""; return; }
+function buildExploreGroups(kind){
+  const cfg=exploreCfg(kind), host=document.getElementById(cfg.groupsHost);
+  if(!cfg.climate){ host.innerHTML=""; return; }
   const byRegion={};
-  JAPAN_CLIMATE.forEach(c=>{ (byRegion[c.region]=byRegion[c.region]||[]).push(c); });
-  document.getElementById("prefGroups").innerHTML=JP_REGIONS.map(region=>{
+  cfg.climate.forEach(c=>{ (byRegion[c.region]=byRegion[c.region]||[]).push(c); });
+  host.innerHTML=cfg.regions.map(region=>{
     const list=byRegion[region]||[];
-    const btns=list.map(c=>`<button class="prefbtn" type="button" data-pref="${esc(c.pref)}">${esc(c.pref)}</button>`).join("");
+    const btns=list.map(c=>`<button class="prefbtn" type="button" data-key="${esc(cfg.keyOf(c))}">${esc(cfg.labelOf(c))}</button>`).join("");
     return `<div class="card"><h2>${esc(region)}</h2><div class="prefgrid">${btns}</div></div>`;
   }).join("");
 }
-function toggleJpSelect(pref){
-  const i=explore.sel.indexOf(pref);
-  if(i>=0) explore.sel.splice(i,1);
-  else{ if(explore.sel.length>=2) explore.sel.shift(); explore.sel.push(pref); }
-  syncJpSelectUI();
+function toggleExploreSelect(kind,key){
+  const cfg=exploreCfg(kind), i=cfg.sel.indexOf(key);
+  if(i>=0) cfg.sel.splice(i,1);
+  else{ if(cfg.sel.length>=2) cfg.sel.shift(); cfg.sel.push(key); }
+  syncExploreSelectUI(kind);
 }
-function syncJpSelectUI(){
-  renderMap();
-  document.querySelectorAll(".prefbtn").forEach(b=>{
-    const idx=explore.sel.indexOf(b.dataset.pref);
+function syncExploreSelectUI(kind){
+  const cfg=exploreCfg(kind);
+  renderExploreMap(kind);
+  document.getElementById(cfg.groupsHost).querySelectorAll(".prefbtn").forEach(b=>{
+    const idx=cfg.sel.indexOf(b.dataset.key);
     b.classList.toggle("selA",idx===0);
     b.classList.toggle("selB",idx===1);
   });
-  const chips=explore.sel.map((pref,i)=>
-    `<span class="chip ${i===0?'a':'b'}"><span class="dot"></span>${esc(pref)}<span class="x" data-removepref="${esc(pref)}" role="button" aria-label="${esc(pref)}をはずす">×</span></span>`
-  ).join("");
-  document.getElementById("selectedChips").innerHTML=chips||`<span class="chipempty">とどうふけんを1〜2つ えらんでください</span>`;
-  $("jpDecide").disabled=explore.sel.length===0;
+  const chips=cfg.sel.map((key,i)=>{
+    const rec=cfg.climate.find(c=>cfg.keyOf(c)===key);
+    const label=rec?cfg.labelOf(rec):key;
+    return `<span class="chip ${i===0?'a':'b'}"><span class="dot"></span>${esc(label)}<span class="x" data-removekey="${esc(key)}" role="button" aria-label="${esc(label)}をはずす">×</span></span>`;
+  }).join("");
+  document.getElementById(cfg.chipsHost).innerHTML=chips||`<span class="chipempty">${esc(cfg.emptyMsg)}</span>`;
+  $(cfg.decideId).disabled=cfg.sel.length===0;
+}
+function currentExploreLocs(kind){
+  const cfg=exploreCfg(kind);
+  return cfg.sel.map(key=>cfg.climate.find(c=>cfg.keyOf(c)===key)).filter(Boolean);
 }
 document.getElementById("jpmap").addEventListener("click",e=>{
-  const el=e.target.closest(".pref-path"); if(!el) return;
-  toggleJpSelect(el.dataset.pref);
+  const el=e.target.closest(".pref-path"); if(!el||!el.dataset.key) return;
+  toggleExploreSelect("jp",el.dataset.key);
 });
 document.getElementById("prefGroups").addEventListener("click",e=>{
   const b=e.target.closest(".prefbtn"); if(!b) return;
-  toggleJpSelect(b.dataset.pref);
+  toggleExploreSelect("jp",b.dataset.key);
 });
 document.getElementById("selectedChips").addEventListener("click",e=>{
-  const x=e.target.closest("[data-removepref]"); if(!x) return;
-  toggleJpSelect(x.dataset.removepref);
+  const x=e.target.closest("[data-removekey]"); if(!x) return;
+  toggleExploreSelect("jp",x.dataset.removekey);
+});
+document.getElementById("worldmap").addEventListener("click",e=>{
+  const el=e.target.closest(".pref-path"); if(!el||!el.dataset.key) return;
+  toggleExploreSelect("world",el.dataset.key);
+});
+document.getElementById("countryGroups").addEventListener("click",e=>{
+  const b=e.target.closest(".prefbtn"); if(!b) return;
+  toggleExploreSelect("world",b.dataset.key);
+});
+document.getElementById("selectedChipsWorld").addEventListener("click",e=>{
+  const x=e.target.closest("[data-removekey]"); if(!x) return;
+  toggleExploreSelect("world",x.dataset.removekey);
 });
 
 const EXPLORE_COLOR={aT:"#c9432c",aP:"#2b6ca3",bT:"#8b3fc9",bP:"#2f9e5c"};
@@ -604,7 +638,7 @@ function exploreSvgMarkup(locs,forExport){
   o.push("</svg>");
   return o.join("");
 }
-function renderExploreStats(locs){
+function renderExploreStats(locs,targetId){
   const cols=locs.map((l,i)=>{
     const d=derive(l.T,l.P);
     const su=summerIdx(l.hemi), Psu=su.reduce((a,idx)=>a+l.P[idx],0);
@@ -614,28 +648,32 @@ function renderExploreStats(locs){
       ["気温年較差",d.range.toFixed(1),"℃"],["夏半年の降水",ratio,"%"]];
     return `<div class="col ${i===0?'a':'b'}"><h3>${esc(l.city)}</h3><dl>${rows.map(([a,b,c])=>`<div><dt>${a}</dt><dd class="mono">${b}<small>${c}</small></dd></div>`).join("")}</dl></div>`;
   }).join("");
-  const el=document.getElementById("exploreStats");
+  const el=document.getElementById(targetId);
   el.innerHTML=cols; el.classList.toggle("single",locs.length===1);
 }
-function renderExploreVerdict(locs){
+function renderExploreVerdict(locs,targetId){
   const cols=locs.map((l,i)=>{
     const k=koppen(l.T,l.P,l.hemi);
     return `<div class="col ${i===0?'a':'b'}"><div class="code">${esc(k.code)}</div><div class="jp">${esc(k.name)}</div><div class="why">${k.why.map(w=>"・"+w).join("<br>")}</div></div>`;
   }).join("");
-  const el=document.getElementById("exploreVerdict");
+  const el=document.getElementById(targetId);
   el.innerHTML=cols; el.classList.toggle("single",locs.length===1);
 }
-function currentJpLocs(){ return explore.sel.map(pref=>JAPAN_CLIMATE.find(c=>c.pref===pref)).filter(Boolean); }
-function renderExploreResult(){
-  const locs=currentJpLocs();
-  document.getElementById("exploreChart").innerHTML=exploreSvgMarkup(locs,false);
-  renderExploreStats(locs);
-  renderExploreVerdict(locs);
+const RESULT_IDS={
+  jp:{chart:"exploreChart",stats:"exploreStats",verdict:"exploreVerdict"},
+  world:{chart:"exploreChartWorld",stats:"exploreStatsWorld",verdict:"exploreVerdictWorld"},
+};
+function renderExploreResult(kind){
+  const ids=RESULT_IDS[kind], locs=currentExploreLocs(kind);
+  document.getElementById(ids.chart).innerHTML=exploreSvgMarkup(locs,false);
+  renderExploreStats(locs,ids.stats);
+  renderExploreVerdict(locs,ids.verdict);
 }
-$("explorePng").addEventListener("click",()=>exportSvgToPng(exploreSvgMarkup(currentJpLocs(),true)));
+$("explorePng").addEventListener("click",()=>exportSvgToPng(exploreSvgMarkup(currentExploreLocs("jp"),true)));
+$("explorePngWorld").addEventListener("click",()=>exportSvgToPng(exploreSvgMarkup(currentExploreLocs("world"),true)));
 
 /* ---------- screens ---------- */
-const SCREENS=["home","draw","explore","jp-select","jp-result","world-select"];
+const SCREENS=["home","draw","explore","jp-select","jp-result","world-select","world-result"];
 function showScreen(name){
   for(const s of SCREENS) document.getElementById("screen-"+s).hidden=(s!==name);
 }
@@ -643,16 +681,25 @@ $("goDraw").addEventListener("click",()=>showScreen("draw"));
 $("goExplore").addEventListener("click",()=>showScreen("explore"));
 document.querySelectorAll("[data-home]").forEach(b=>b.addEventListener("click",()=>showScreen("home")));
 $("goJapan").addEventListener("click",()=>{
-  buildPrefGroups(); syncJpSelectUI();
+  buildExploreGroups("jp"); syncExploreSelectUI("jp");
   showScreen("jp-select");
 });
-$("goWorld").addEventListener("click",()=>showScreen("world-select"));
+$("goWorld").addEventListener("click",()=>{
+  buildExploreGroups("world"); syncExploreSelectUI("world");
+  showScreen("world-select");
+});
 $("jpDecide").addEventListener("click",()=>{
-  if(explore.sel.length===0) return;
-  renderExploreResult();
+  if(explore.jpSel.length===0) return;
+  renderExploreResult("jp");
   showScreen("jp-result");
 });
+$("worldDecide").addEventListener("click",()=>{
+  if(explore.worldSel.length===0) return;
+  renderExploreResult("world");
+  showScreen("world-result");
+});
 $("backToJpSelect").addEventListener("click",()=>showScreen("jp-select"));
+$("backToWorldSelect").addEventListener("click",()=>showScreen("world-select"));
 
 load(); syncInputs(); buildTable(); render();
 showScreen("home");

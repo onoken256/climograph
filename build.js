@@ -21,6 +21,7 @@ function embedJson(varName, file) {
 const dataScript = [
   embedJson("JAPAN_MAP", "japan_map.json"),
   embedJson("JAPAN_CLIMATE", "japan.json"),
+  embedJson("WORLD_MAP", "world_map.json"),
   embedJson("WORLD_CLIMATE", "world.json"),
 ].join("\n");
 

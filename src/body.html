@@ -143,19 +143,55 @@
         <button class="modebtn" id="goWorld" type="button">
           <span class="modebtn-emoji" aria-hidden="true">🌍</span>
           <span class="modebtn-label">世界</span>
-          <span class="modebtn-desc">じゅんびちゅう</span>
+          <span class="modebtn-desc">くにから えらぶ</span>
         </button>
       </div>
     </div>
   </section>
 
-  <section id="screen-world-select" class="screen explore" hidden>
+  <section id="screen-world-select" class="screen app" hidden>
     <div class="topbar">
       <button class="homebtn" data-home type="button" aria-label="ホームへ">🏠</button>
       <div class="brand"><h1>雨温図メーカー</h1><span class="mono">🔍モード・世界</span></div>
     </div>
-    <div class="explorebody">
-      <p>🌍 世界モードは じゅんびちゅうです。</p>
+    <div class="stage">
+      <div class="sheetwrap"><div id="worldmap" style="width:100%;display:flex;justify-content:center"></div></div>
+      <div class="rail">
+        <div class="card">
+          <h2>えらんだ くに</h2>
+          <div class="chiprow" id="selectedChipsWorld"></div>
+          <div class="row" style="margin-top:10px">
+            <button class="act primary" id="worldDecide" type="button" style="flex:1" disabled>けってい</button>
+          </div>
+        </div>
+        <div id="countryGroups"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="screen-world-result" class="screen app" hidden>
+    <div class="topbar">
+      <button class="homebtn" data-home type="button" aria-label="ホームへ">🏠</button>
+      <div class="brand"><h1>雨温図メーカー</h1><span class="mono">🔍モード・世界</span></div>
+      <button class="act" id="backToWorldSelect" type="button">国</button>
+    </div>
+    <div class="stage">
+      <div class="sheetwrap"><div id="exploreChartWorld" style="width:100%;display:flex;justify-content:center"></div></div>
+      <div class="rail">
+        <div class="card">
+          <h2>読みとり</h2>
+          <div class="stats2" id="exploreStatsWorld"></div>
+        </div>
+        <div class="card">
+          <h2>ケッペンの気候区分</h2>
+          <div class="verdict2" id="exploreVerdictWorld"></div>
+        </div>
+        <div class="card">
+          <div class="acts">
+            <button class="act primary" id="explorePngWorld" type="button" style="grid-column:1/-1">画像にする</button>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
