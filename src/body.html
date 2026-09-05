@@ -134,7 +134,74 @@
       <div class="brand"><h1>雨温図メーカー</h1><span class="mono">🔍モード</span></div>
     </div>
     <div class="explorebody">
-      <p>🔍モードは じゅんびちゅうです。</p>
+      <div class="modepick">
+        <button class="modebtn" id="goJapan" type="button">
+          <span class="modebtn-emoji" aria-hidden="true">🗾</span>
+          <span class="modebtn-label">日本</span>
+          <span class="modebtn-desc">都道府県から えらぶ</span>
+        </button>
+        <button class="modebtn" id="goWorld" type="button">
+          <span class="modebtn-emoji" aria-hidden="true">🌍</span>
+          <span class="modebtn-label">世界</span>
+          <span class="modebtn-desc">じゅんびちゅう</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section id="screen-world-select" class="screen explore" hidden>
+    <div class="topbar">
+      <button class="homebtn" data-home type="button" aria-label="ホームへ">🏠</button>
+      <div class="brand"><h1>雨温図メーカー</h1><span class="mono">🔍モード・世界</span></div>
+    </div>
+    <div class="explorebody">
+      <p>🌍 世界モードは じゅんびちゅうです。</p>
+    </div>
+  </section>
+
+  <section id="screen-jp-select" class="screen app" hidden>
+    <div class="topbar">
+      <button class="homebtn" data-home type="button" aria-label="ホームへ">🏠</button>
+      <div class="brand"><h1>雨温図メーカー</h1><span class="mono">🔍モード・日本</span></div>
+    </div>
+    <div class="stage">
+      <div class="sheetwrap"><div id="jpmap" style="width:100%;display:flex;justify-content:center"></div></div>
+      <div class="rail">
+        <div class="card">
+          <h2>えらんだ けん</h2>
+          <div class="chiprow" id="selectedChips"></div>
+          <div class="row" style="margin-top:10px">
+            <button class="act primary" id="jpDecide" type="button" style="flex:1" disabled>けってい</button>
+          </div>
+        </div>
+        <div id="prefGroups"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="screen-jp-result" class="screen app" hidden>
+    <div class="topbar">
+      <button class="homebtn" data-home type="button" aria-label="ホームへ">🏠</button>
+      <div class="brand"><h1>雨温図メーカー</h1><span class="mono">🔍モード・日本</span></div>
+      <button class="act" id="backToJpSelect" type="button">県</button>
+    </div>
+    <div class="stage">
+      <div class="sheetwrap"><div id="exploreChart" style="width:100%;display:flex;justify-content:center"></div></div>
+      <div class="rail">
+        <div class="card">
+          <h2>読みとり</h2>
+          <div class="stats2" id="exploreStats"></div>
+        </div>
+        <div class="card">
+          <h2>ケッペンの気候区分</h2>
+          <div class="verdict2" id="exploreVerdict"></div>
+        </div>
+        <div class="card">
+          <div class="acts">
+            <button class="act primary" id="explorePng" type="button" style="grid-column:1/-1">画像にする</button>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 

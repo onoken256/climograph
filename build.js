@@ -7,14 +7,27 @@ const path = require("path");
 
 const ROOT = __dirname;
 const SRC = path.join(ROOT, "src");
+const DATA = path.join(ROOT, "data");
 
 const scriptFiles = ["app.js"];
+
+// 🔍モードのデータ(地図・気候値)をJSとして埋め込む。データ自体は data/ 以下の
+// スクリプト(scripts/build_japan_data.js 等)で生成したものをそのまま使う。
+function embedJson(varName, file) {
+  const p = path.join(DATA, file);
+  if (!fs.existsSync(p)) return `const ${varName} = null;`;
+  return `const ${varName} = ${fs.readFileSync(p, "utf8").trim()};`;
+}
+const dataScript = [
+  embedJson("JAPAN_MAP", "japan_map.json"),
+  embedJson("JAPAN_CLIMATE", "japan.json"),
+  embedJson("WORLD_CLIMATE", "world.json"),
+].join("\n");
 
 const head = fs.readFileSync(path.join(SRC, "head.html"), "utf8").trim();
 const style = fs.readFileSync(path.join(SRC, "style.css"), "utf8").trim();
 const body = fs.readFileSync(path.join(SRC, "body.html"), "utf8").trim();
-const script = scriptFiles
-  .map(f => fs.readFileSync(path.join(SRC, f), "utf8").trim())
+const script = [dataScript, ...scriptFiles.map(f => fs.readFileSync(path.join(SRC, f), "utf8").trim())]
   .join("\n\n");
 
 const out = `${head}

@@ -80,9 +80,11 @@ const F="'Zen Kaku Gothic New','Hiragino Sans','Noto Sans JP',sans-serif";
 const FM="'IBM Plex Mono',ui-monospace,Menlo,monospace";
 
 /* ---------- climate math ---------- */
-function summerIdx(){return state.hemi==="N"?[3,4,5,6,7,8]:[9,10,11,0,1,2];}
-function derive(){
-  const T=state.T,P=state.P;
+function computeTRange(T){const tn=Math.min(...T),tx=Math.max(...T);return [tn<-25?-40:(tn>=0?0:-30), tx>30?40:30];}
+function computePMax(P){const pm=Math.max(...P);return [300,600,900,1200,1800].find(v=>v>=pm)||2400;}
+function summerIdx(hemi){return (hemi||state.hemi)==="N"?[3,4,5,6,7,8]:[9,10,11,0,1,2];}
+function derive(T,P){
+  T=T||state.T; P=P||state.P;
   const Tann=T.reduce((a,b)=>a+b,0)/T.length, Pann=P.reduce((a,b)=>a+b,0);
   const Tmax=Math.max(...T),Tmin=Math.min(...T);
   return {Tann,Pann,Tmax,Tmin,
@@ -90,9 +92,10 @@ function derive(){
     wetM:P.indexOf(Math.max(...P)),dryM:P.indexOf(Math.min(...P)),
     range:Tmax-Tmin};
 }
-function koppen(){
-  const T=state.T,P=state.P,d=derive();
-  const su=summerIdx(), wi=[...Array(T.length).keys()].filter(i=>!su.includes(i));
+function koppen(T,P,hemi){
+  T=T||state.T; P=P||state.P; hemi=hemi||state.hemi;
+  const d=derive(T,P);
+  const su=summerIdx(hemi), wi=[...Array(T.length).keys()].filter(i=>!su.includes(i));
   const Psu=su.reduce((a,i)=>a+P[i],0), Pwi=wi.reduce((a,i)=>a+P[i],0);
   const r=d.Pann>0?Psu/d.Pann:0.5;
   let th, dist;
@@ -407,9 +410,8 @@ $("scaleSeg").addEventListener("click",e=>{
 $("moPrev").addEventListener("click",()=>{ switchScale("month",(state.monthOf+11)%12); syncInputs(); buildTable(); render(); });
 $("moNext").addEventListener("click",()=>{ switchScale("month",(state.monthOf+1)%12); syncInputs(); buildTable(); render(); });
 $("autoScale").addEventListener("click",()=>{
-  const pm=Math.max(...state.P), tn=Math.min(...state.T), tx=Math.max(...state.T);
-  state.pMax=[300,600,900,1200,1800].find(v=>v>=pm)||2400;
-  state.tMin=tn<-25?-40:(tn>=0?0:-30); state.tMax=tx>30?40:30;
+  const [tMin,tMax]=computeTRange(state.T);
+  state.pMax=computePMax(state.P); state.tMin=tMin; state.tMax=tMax;
   syncInputs(); render();
 });
 $("undo").addEventListener("click",()=>{ const h=history.pop(); if(!h)return; Object.assign(state,h); syncInputs(); buildTable(); render(); });
@@ -424,8 +426,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("focusin",e=>{ if(e.target.matches("table.grid input")) push(); });
 
-$("png").addEventListener("click",()=>{
-  const svg=svgMarkup(true);
+function exportSvgToPng(svg){
   const img=new Image(); const sc=2;
   img.onload=()=>{
     const c=document.createElement("canvas"); c.width=W*sc; c.height=H*sc;
@@ -436,7 +437,8 @@ $("png").addEventListener("click",()=>{
   };
   img.onerror=()=>alert("画像を作れませんでした。");
   img.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
-});
+}
+$("png").addEventListener("click",()=>exportSvgToPng(svgMarkup(true)));
 $("closeModal").addEventListener("click",()=>{$("modal").hidden=true;});
 $("modal").addEventListener("click",e=>{ if(e.target.id==="modal") $("modal").hidden=true; });
 
@@ -454,15 +456,203 @@ function syncInputs(){
   if(state.scale==="month") $("moLabel").textContent=`${MONTHS[state.monthOf]}（${DAYS_IN_MONTH[state.monthOf]}日）`;
 }
 
+/* ---------- 🔍モード: 日本 ---------- */
+const JP_REGIONS=["北海道","東北","関東","中部","近畿","中国","四国","九州・沖縄"];
+const explore={sel:[]}; // 選ばれた都道府県名。0番目=A(赤系)・1番目=B(青緑系)
+
+// 地図描画はここだけ差し替えれば良いように分離してある（タイル地図等への変更にも対応できる）
+function renderMap(){
+  const host=document.getElementById("jpmap");
+  if(!JAPAN_MAP){ host.innerHTML="<p>地図データがありません</p>"; return; }
+  const [vx,vy,vw,vh]=JAPAN_MAP.viewBox;
+  const o=[`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" role="img" aria-label="日本地図">`];
+  for(const p of JAPAN_MAP.prefectures){
+    const idx=explore.sel.indexOf(p.name);
+    const cls=idx===0?"selA":idx===1?"selB":"";
+    o.push(`<path class="pref-path ${cls}" data-pref="${esc(p.name)}" d="${p.d}"><title>${esc(p.name)}</title></path>`);
+  }
+  o.push("</svg>");
+  host.innerHTML=o.join("");
+}
+function buildPrefGroups(){
+  if(!JAPAN_CLIMATE){ document.getElementById("prefGroups").innerHTML=""; return; }
+  const byRegion={};
+  JAPAN_CLIMATE.forEach(c=>{ (byRegion[c.region]=byRegion[c.region]||[]).push(c); });
+  document.getElementById("prefGroups").innerHTML=JP_REGIONS.map(region=>{
+    const list=byRegion[region]||[];
+    const btns=list.map(c=>`<button class="prefbtn" type="button" data-pref="${esc(c.pref)}">${esc(c.pref)}</button>`).join("");
+    return `<div class="card"><h2>${esc(region)}</h2><div class="prefgrid">${btns}</div></div>`;
+  }).join("");
+}
+function toggleJpSelect(pref){
+  const i=explore.sel.indexOf(pref);
+  if(i>=0) explore.sel.splice(i,1);
+  else{ if(explore.sel.length>=2) explore.sel.shift(); explore.sel.push(pref); }
+  syncJpSelectUI();
+}
+function syncJpSelectUI(){
+  renderMap();
+  document.querySelectorAll(".prefbtn").forEach(b=>{
+    const idx=explore.sel.indexOf(b.dataset.pref);
+    b.classList.toggle("selA",idx===0);
+    b.classList.toggle("selB",idx===1);
+  });
+  const chips=explore.sel.map((pref,i)=>
+    `<span class="chip ${i===0?'a':'b'}"><span class="dot"></span>${esc(pref)}<span class="x" data-removepref="${esc(pref)}" role="button" aria-label="${esc(pref)}をはずす">×</span></span>`
+  ).join("");
+  document.getElementById("selectedChips").innerHTML=chips||`<span class="chipempty">とどうふけんを1〜2つ えらんでください</span>`;
+  $("jpDecide").disabled=explore.sel.length===0;
+}
+document.getElementById("jpmap").addEventListener("click",e=>{
+  const el=e.target.closest(".pref-path"); if(!el) return;
+  toggleJpSelect(el.dataset.pref);
+});
+document.getElementById("prefGroups").addEventListener("click",e=>{
+  const b=e.target.closest(".prefbtn"); if(!b) return;
+  toggleJpSelect(b.dataset.pref);
+});
+document.getElementById("selectedChips").addEventListener("click",e=>{
+  const x=e.target.closest("[data-removepref]"); if(!x) return;
+  toggleJpSelect(x.dataset.removepref);
+});
+
+const EXPLORE_COLOR={aT:"#c9432c",aP:"#2b6ca3",bT:"#8b3fc9",bP:"#2f9e5c"};
+function exploreSvgMarkup(locs,forExport){
+  const allT=locs.flatMap(l=>l.T), allP=locs.flatMap(l=>l.P);
+  const [tMin,tMax]=computeTRange(allT), pMax=computePMax(allP);
+  const tStep=10, pStep=pMax/6;
+  const cw=(PR-PL)/12;
+  const xc=i=>PL+(i+0.5)*cw;
+  const yT=t=>PB-(t-tMin)/(tMax-tMin)*PH;
+  const yP=p=>PB-(p/pMax)*PH;
+  const o=[`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="雨温図（${esc(locs.map(l=>l.city).join("と"))}の比較）">`];
+  o.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#fbfcfa"/>`);
+
+  if(locs.length===1){
+    const d=derive(locs[0].T,locs[0].P), k=koppen(locs[0].T,locs[0].P,locs[0].hemi);
+    o.push(`<text x="${PL}" y="48" font-family="${F}" font-size="30" font-weight="700" fill="#1e242a">${esc(locs[0].city)}</text>`);
+    o.push(`<text x="${PL}" y="74" font-family="${FM}" font-size="14.5" fill="#66737c">年平均気温 ${d.Tann.toFixed(1)}℃ ／ 年降水量 ${d.Pann.toFixed(1)}mm ／ 気温年較差 ${d.range.toFixed(1)}℃</text>`);
+    o.push(`<text x="${PR}" y="44" text-anchor="end" font-family="${FM}" font-size="27" font-weight="600" fill="#2b6ca3">${esc(k.code)}</text>`);
+    o.push(`<text x="${PR}" y="70" text-anchor="end" font-family="${F}" font-size="14.5" fill="#66737c">${esc(k.name)}・${locs[0].hemi==="N"?"北半球":"南半球"}</text>`);
+  }else{
+    o.push(`<text x="${PL}" y="42" font-family="${F}" font-size="23" font-weight="700" fill="${EXPLORE_COLOR.aT}">${esc(locs[0].city)}</text>`);
+    o.push(`<text x="${PL}" y="72" font-family="${F}" font-size="23" font-weight="700" fill="${EXPLORE_COLOR.bT}">${esc(locs[1].city)}</text>`);
+  }
+
+  for(let i=1;i<12;i++) o.push(`<line x1="${(PL+i*cw).toFixed(1)}" y1="${PT}" x2="${(PL+i*cw).toFixed(1)}" y2="${PB}" stroke="#e4eae7" stroke-width="1"/>`);
+  for(let t=tMin;t<=tMax+.001;t+=tStep){
+    const y=yT(t), zero=Math.abs(t)<.001;
+    o.push(`<line x1="${PL}" y1="${y.toFixed(1)}" x2="${PR}" y2="${y.toFixed(1)}" stroke="${zero?"#b3bfc4":"#ccd6d2"}" stroke-width="${zero?1.6:1}"${zero?"":' stroke-dasharray="1 0"'}/>`);
+    o.push(`<text x="${PL-14}" y="${(y+5).toFixed(1)}" text-anchor="end" font-family="${FM}" font-size="15" fill="#c9432c">${t}</text>`);
+  }
+  for(let p=0;p<=pMax+.001;p+=pStep){
+    const y=yP(p);
+    o.push(`<line x1="${PR}" y1="${y.toFixed(1)}" x2="${PR+8}" y2="${y.toFixed(1)}" stroke="#9fb3bd" stroke-width="1.4"/>`);
+    o.push(`<text x="${PR+15}" y="${(y+5).toFixed(1)}" font-family="${FM}" font-size="15" fill="#2b6ca3">${Math.round(p)}</text>`);
+  }
+  o.push(`<rect x="${PL}" y="${PT}" width="${PR-PL}" height="${PH}" fill="none" stroke="#9fb3bd" stroke-width="1.6"/>`);
+
+  const bw=locs.length===1?Math.min(42,cw*0.66):Math.min(20,cw*0.32);
+  locs.forEach((loc,li)=>{
+    const barColor=li===0?EXPLORE_COLOR.aP:EXPLORE_COLOR.bP;
+    for(let i=0;i<12;i++){
+      const v=clamp(loc.P[i],0,pMax), over=loc.P[i]>pMax;
+      const y=yP(v), h=Math.max(0,PB-y);
+      const x=locs.length===1?xc(i)-bw/2:(li===0?xc(i)-bw-1:xc(i)+1);
+      if(h>0.4){
+        o.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw}" height="${h.toFixed(1)}" fill="${barColor}" opacity="0.86"/>`);
+      }
+      if(over) o.push(`<path d="M${x.toFixed(1)} ${PT+9} l${bw/4} -7 l${bw/4} 7 l${bw/4} -7 l${bw/4} 7" fill="none" stroke="#fbfcfa" stroke-width="3"/>`);
+    }
+  });
+
+  locs.forEach((loc,li)=>{
+    const lineColor=li===0?EXPLORE_COLOR.aT:EXPLORE_COLOR.bT;
+    const pts=loc.T.map((t,i)=>`${xc(i).toFixed(1)},${clamp(yT(t),PT-40,PB+40).toFixed(1)}`).join(" ");
+    o.push(`<polyline points="${pts}" fill="none" stroke="${lineColor}" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"${li===1?' stroke-dasharray="8 5"':""}/>`);
+    for(let i=0;i<12;i++){
+      const y=clamp(yT(loc.T[i]),PT-40,PB+40);
+      if(li===0) o.push(`<circle cx="${xc(i).toFixed(1)}" cy="${y.toFixed(1)}" r="7.5" fill="#fbfcfa" stroke="${lineColor}" stroke-width="3"/>`);
+      else o.push(`<rect x="${(xc(i)-6.5).toFixed(1)}" y="${(y-6.5).toFixed(1)}" width="13" height="13" fill="#fbfcfa" stroke="${lineColor}" stroke-width="3"/>`);
+    }
+  });
+
+  for(let i=0;i<12;i++){
+    o.push(`<text x="${xc(i).toFixed(1)}" y="${PB+30}" text-anchor="middle" font-family="${F}" font-size="16" font-weight="400" fill="#66737c">${i+1}</text>`);
+  }
+  o.push(`<text x="${PL-14}" y="${PB+30}" text-anchor="end" font-family="${F}" font-size="13" fill="#8896a0">月</text>`);
+  o.push(`<text transform="translate(28,${(PT+PH/2).toFixed(1)}) rotate(-90)" text-anchor="middle" font-family="${F}" font-size="15" font-weight="500" fill="#c9432c">気温 (℃)</text>`);
+  o.push(`<text transform="translate(${W-22},${(PT+PH/2).toFixed(1)}) rotate(90)" text-anchor="middle" font-family="${F}" font-size="15" font-weight="500" fill="#2b6ca3">降水量 (mm)</text>`);
+
+  if(locs.length===1){
+    const ly=PB+64;
+    o.push(`<line x1="${PL}" y1="${ly-5}" x2="${PL+26}" y2="${ly-5}" stroke="#c9432c" stroke-width="3.6"/><circle cx="${PL+13}" cy="${ly-5}" r="6.5" fill="#fbfcfa" stroke="#c9432c" stroke-width="3"/>`);
+    o.push(`<text x="${PL+34}" y="${ly}" font-family="${F}" font-size="14" fill="#525f68">気温</text>`);
+    o.push(`<rect x="${PL+90}" y="${ly-14}" width="20" height="16" fill="#2b6ca3" opacity="0.86"/>`);
+    o.push(`<text x="${PL+118}" y="${ly}" font-family="${F}" font-size="14" fill="#525f68">降水量</text>`);
+  }else{
+    [0,1].forEach(li=>{
+      const ly=PB+58+li*24, tCol=li===0?EXPLORE_COLOR.aT:EXPLORE_COLOR.bT, pCol=li===0?EXPLORE_COLOR.aP:EXPLORE_COLOR.bP;
+      if(li===0) o.push(`<line x1="${PL}" y1="${ly-5}" x2="${PL+26}" y2="${ly-5}" stroke="${tCol}" stroke-width="3.4"/><circle cx="${PL+13}" cy="${ly-5}" r="6" fill="#fbfcfa" stroke="${tCol}" stroke-width="2.6"/>`);
+      else o.push(`<line x1="${PL}" y1="${ly-5}" x2="${PL+26}" y2="${ly-5}" stroke="${tCol}" stroke-width="3.4" stroke-dasharray="6 4"/><rect x="${PL+8}" y="${ly-11}" width="11" height="11" fill="#fbfcfa" stroke="${tCol}" stroke-width="2.6"/>`);
+      o.push(`<text x="${PL+34}" y="${ly}" font-family="${F}" font-size="13" fill="#525f68">${esc(locs[li].city)} 気温</text>`);
+      o.push(`<rect x="${PL+150}" y="${ly-13}" width="18" height="14" fill="${pCol}" opacity="0.86"/>`);
+      o.push(`<text x="${PL+176}" y="${ly}" font-family="${F}" font-size="13" fill="#525f68">${esc(locs[li].city)} 降水量</text>`);
+    });
+  }
+  o.push(`<text x="${PR}" y="${H-14}" text-anchor="end" font-family="${F}" font-size="11" fill="#8896a0">${esc(locs[0].source)}</text>`);
+  o.push("</svg>");
+  return o.join("");
+}
+function renderExploreStats(locs){
+  const cols=locs.map((l,i)=>{
+    const d=derive(l.T,l.P);
+    const su=summerIdx(l.hemi), Psu=su.reduce((a,idx)=>a+l.P[idx],0);
+    const ratio=d.Pann>0?Math.round(Psu/d.Pann*100):0;
+    const rows=[["年平均気温",d.Tann.toFixed(1),"℃"],["年降水量",d.Pann.toFixed(1),"mm"],
+      ["最暖月",`${d.hotM+1}月 ${d.Tmax.toFixed(1)}`,"℃"],["最寒月",`${d.coldM+1}月 ${d.Tmin.toFixed(1)}`,"℃"],
+      ["気温年較差",d.range.toFixed(1),"℃"],["夏半年の降水",ratio,"%"]];
+    return `<div class="col ${i===0?'a':'b'}"><h3>${esc(l.city)}</h3><dl>${rows.map(([a,b,c])=>`<div><dt>${a}</dt><dd class="mono">${b}<small>${c}</small></dd></div>`).join("")}</dl></div>`;
+  }).join("");
+  const el=document.getElementById("exploreStats");
+  el.innerHTML=cols; el.classList.toggle("single",locs.length===1);
+}
+function renderExploreVerdict(locs){
+  const cols=locs.map((l,i)=>{
+    const k=koppen(l.T,l.P,l.hemi);
+    return `<div class="col ${i===0?'a':'b'}"><div class="code">${esc(k.code)}</div><div class="jp">${esc(k.name)}</div><div class="why">${k.why.map(w=>"・"+w).join("<br>")}</div></div>`;
+  }).join("");
+  const el=document.getElementById("exploreVerdict");
+  el.innerHTML=cols; el.classList.toggle("single",locs.length===1);
+}
+function currentJpLocs(){ return explore.sel.map(pref=>JAPAN_CLIMATE.find(c=>c.pref===pref)).filter(Boolean); }
+function renderExploreResult(){
+  const locs=currentJpLocs();
+  document.getElementById("exploreChart").innerHTML=exploreSvgMarkup(locs,false);
+  renderExploreStats(locs);
+  renderExploreVerdict(locs);
+}
+$("explorePng").addEventListener("click",()=>exportSvgToPng(exploreSvgMarkup(currentJpLocs(),true)));
+
 /* ---------- screens ---------- */
+const SCREENS=["home","draw","explore","jp-select","jp-result","world-select"];
 function showScreen(name){
-  document.getElementById("screen-home").hidden=name!=="home";
-  document.getElementById("screen-draw").hidden=name!=="draw";
-  document.getElementById("screen-explore").hidden=name!=="explore";
+  for(const s of SCREENS) document.getElementById("screen-"+s).hidden=(s!==name);
 }
 $("goDraw").addEventListener("click",()=>showScreen("draw"));
 $("goExplore").addEventListener("click",()=>showScreen("explore"));
 document.querySelectorAll("[data-home]").forEach(b=>b.addEventListener("click",()=>showScreen("home")));
+$("goJapan").addEventListener("click",()=>{
+  buildPrefGroups(); syncJpSelectUI();
+  showScreen("jp-select");
+});
+$("goWorld").addEventListener("click",()=>showScreen("world-select"));
+$("jpDecide").addEventListener("click",()=>{
+  if(explore.sel.length===0) return;
+  renderExploreResult();
+  showScreen("jp-result");
+});
+$("backToJpSelect").addEventListener("click",()=>showScreen("jp-select"));
 
 load(); syncInputs(); buildTable(); render();
 showScreen("home");
