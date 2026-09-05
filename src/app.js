@@ -342,4 +342,15 @@ function syncInputs(){
   $("tgVals").setAttribute("aria-pressed",String(state.showValues));
 }
 
+/* ---------- screens ---------- */
+function showScreen(name){
+  document.getElementById("screen-home").hidden=name!=="home";
+  document.getElementById("screen-draw").hidden=name!=="draw";
+  document.getElementById("screen-explore").hidden=name!=="explore";
+}
+$("goDraw").addEventListener("click",()=>showScreen("draw"));
+$("goExplore").addEventListener("click",()=>showScreen("explore"));
+document.querySelectorAll("[data-home]").forEach(b=>b.addEventListener("click",()=>showScreen("home")));
+
 load(); syncInputs(); buildTable(); render();
+showScreen("home");
