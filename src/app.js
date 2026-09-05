@@ -17,12 +17,55 @@ const PRESETS={
 
 const state={name:"東京",T:PRESETS["東京"].T.slice(),P:PRESETS["東京"].P.slice(),
  hemi:"N",tMin:-30,tMax:30,pMax:600,mode:"auto",trace:true,showValues:false,sel:0,lastPreset:"東京",
- scale:"year",N:12,labels:MONTHS.slice(),axisUnit:"月"};
+ scale:"year",N:12,labels:MONTHS.slice(),axisUnit:"月",monthOf:0,byScale:{month:{}}};
 const history=[];
 
-/* ---------- geometry ----------
-   時間軸の項目数は state.N（可変）。年間=12・月間=その月の日数・日毎=24 を想定するが、
-   このフェーズでは state.N=12 固定（年間のみ）で現状の見た目・挙動を維持する。 */
+/* ---------- time-scale management ----------
+   年間(N=12)／月間(N=その月の日数)／日毎(N=24) を切り替える。
+   切り替え時は state.byScale に元の粒度のデータを退避し、戻ってきたときに復元する。
+   月間はさらに「どの実月か」(state.monthOf 0〜11)ごとにデータを分けて持つ。 */
+const DAYS_IN_MONTH=[31,28,31,30,31,30,31,31,30,31,30,31];
+const dayLabels=n=>Array.from({length:n},(_,i)=>String(i+1));
+const hourLabels=()=>Array.from({length:24},(_,i)=>String(i));
+
+function labelUnit(i){ const l=String(state.labels[i]); return l.endsWith(state.axisUnit)?l:l+state.axisUnit; }
+function labelBare(i){ const l=String(state.labels[i]); return l.endsWith(state.axisUnit)?l.slice(0,-state.axisUnit.length):l; }
+
+function scaleShape(scale,monthOf){
+  if(scale==="year") return {N:12,labels:MONTHS.slice(),axisUnit:"月"};
+  if(scale==="day") return {N:24,labels:hourLabels(),axisUnit:"時"};
+  const n=DAYS_IN_MONTH[monthOf];
+  return {N:n,labels:dayLabels(n),axisUnit:"日"};
+}
+function defaultData(scale,monthOf){
+  if(scale==="day"){
+    const baseT=state.byScale.year?state.byScale.year.T[state.sel]:15;
+    return {T:Array(24).fill(baseT),P:Array(24).fill(0),sel:0};
+  }
+  if(scale==="month"){
+    const n=DAYS_IN_MONTH[monthOf], yr=state.byScale.year;
+    const baseT=yr?yr.T[monthOf]:15, baseP=yr?Math.round(yr.P[monthOf]/n*10)/10:0;
+    return {T:Array(n).fill(baseT),P:Array(n).fill(baseP),sel:0};
+  }
+  const preset=PRESETS[state.lastPreset];
+  return {T:preset?preset.T.slice():Array(12).fill(15),P:preset?preset.P.slice():Array(12).fill(100),sel:0};
+}
+function cacheGet(scale,monthOf){ return scale==="month"?state.byScale.month[monthOf]:state.byScale[scale]; }
+function cacheSet(scale,monthOf,data){ if(scale==="month") state.byScale.month[monthOf]=data; else state.byScale[scale]=data; }
+function saveCurrentToCache(){ cacheSet(state.scale,state.monthOf,{T:state.T.slice(),P:state.P.slice(),sel:state.sel}); }
+function switchScale(target,monthOf){
+  if(target==="month"&&monthOf===undefined) monthOf=state.monthOf;
+  if(target===state.scale&&(target!=="month"||monthOf===state.monthOf)) return;
+  saveCurrentToCache();
+  const shape=scaleShape(target,monthOf);
+  const cached=cacheGet(target,monthOf);
+  const data=cached?{T:cached.T.slice(),P:cached.P.slice(),sel:cached.sel}:defaultData(target,monthOf);
+  state.scale=target; if(target==="month") state.monthOf=monthOf;
+  state.N=shape.N; state.labels=shape.labels; state.axisUnit=shape.axisUnit;
+  state.T=data.T; state.P=data.P; state.sel=clamp(data.sel|0,0,shape.N-1);
+}
+
+/* ---------- geometry ---------- */
 const W=1020,H=700,PL=88,PR=924,PT=96,PB=614;
 const PH=PB-PT;
 const CW=()=>(PR-PL)/state.N;
@@ -102,16 +145,21 @@ function koppen(){
 
 /* ---------- chart ---------- */
 function svgMarkup(forExport){
-  const d=derive(), k=koppen(), o=[];
+  const d=derive(), k=state.scale==="year"?koppen():null, o=[];
   const tStep=10, pStep=state.pMax/6;
   o.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(state.name)}の雨温図">`);
   o.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#fbfcfa"/>`);
 
   // header block
+  const headStat=state.scale==="year"
+    ?`年平均気温 ${d.Tann.toFixed(1)}℃ ／ 年降水量 ${d.Pann.toFixed(1)}mm ／ 気温年較差 ${d.range.toFixed(1)}℃`
+    :`平均気温 ${d.Tann.toFixed(1)}℃ ／ 合計降水量 ${d.Pann.toFixed(1)}mm ／ 気温差 ${d.range.toFixed(1)}℃`;
   o.push(`<text x="${PL}" y="48" font-family="${F}" font-size="30" font-weight="700" fill="#1e242a">${esc(state.name||"　")}</text>`);
-  o.push(`<text x="${PL}" y="74" font-family="${FM}" font-size="14.5" fill="#66737c">年平均気温 ${d.Tann.toFixed(1)}℃ ／ 年降水量 ${Math.round(d.Pann)}mm ／ 気温年較差 ${d.range.toFixed(1)}℃</text>`);
-  o.push(`<text x="${PR}" y="44" text-anchor="end" font-family="${FM}" font-size="27" font-weight="600" fill="#2b6ca3">${esc(k.code)}</text>`);
-  o.push(`<text x="${PR}" y="70" text-anchor="end" font-family="${F}" font-size="14.5" fill="#66737c">${esc(k.name)}・${state.hemi==="N"?"北半球":"南半球"}</text>`);
+  o.push(`<text x="${PL}" y="74" font-family="${FM}" font-size="14.5" fill="#66737c">${headStat}</text>`);
+  if(k){
+    o.push(`<text x="${PR}" y="44" text-anchor="end" font-family="${FM}" font-size="27" font-weight="600" fill="#2b6ca3">${esc(k.code)}</text>`);
+    o.push(`<text x="${PR}" y="70" text-anchor="end" font-family="${F}" font-size="14.5" fill="#66737c">${esc(k.name)}・${state.hemi==="N"?"北半球":"南半球"}</text>`);
+  }
 
   // selected column band
   const cw=CW();
@@ -159,7 +207,7 @@ function svgMarkup(forExport){
   for(let i=0;i<state.N;i++){
     if(!state.showValues && !(i===state.sel && !forExport)) continue;
     const pv=state.P[i], py=yP(clamp(pv,0,state.pMax)), tall=PB-py>34;
-    o.push(`<text x="${xc(i).toFixed(1)}" y="${(tall?py+22:py-10).toFixed(1)}" text-anchor="middle" font-family="${FM}" font-size="14" font-weight="600" fill="${tall?"#ffffff":"#2b6ca3"}">${Math.round(pv)}</text>`);
+    o.push(`<text x="${xc(i).toFixed(1)}" y="${(tall?py+22:py-10).toFixed(1)}" text-anchor="middle" font-family="${FM}" font-size="14" font-weight="600" fill="${tall?"#ffffff":"#2b6ca3"}">${pv.toFixed(1)}</text>`);
     const ty=clamp(yT(state.T[i]),PT,PB), above=ty>PT+40;
     o.push(`<text x="${xc(i).toFixed(1)}" y="${(above?ty-19:ty+29).toFixed(1)}" text-anchor="middle" font-family="${FM}" font-size="14" font-weight="600" fill="#c9432c" stroke="#fbfcfa" stroke-width="3.5" paint-order="stroke">${state.T[i].toFixed(1)}</text>`);
   }
@@ -169,7 +217,7 @@ function svgMarkup(forExport){
   for(let i=0;i<state.N;i++){
     if(!showLabel(i)) continue;
     const on=i===state.sel;
-    o.push(`<text x="${xc(i).toFixed(1)}" y="${PB+30}" text-anchor="middle" font-family="${F}" font-size="16" font-weight="${on?700:400}" fill="${on?"#1e242a":"#66737c"}">${esc(state.labels[i])}</text>`);
+    o.push(`<text x="${xc(i).toFixed(1)}" y="${PB+30}" text-anchor="middle" font-family="${F}" font-size="16" font-weight="${on?700:400}" fill="${on?"#1e242a":"#66737c"}">${esc(labelBare(i))}</text>`);
   }
   o.push(`<text x="${PL-14}" y="${PB+30}" text-anchor="end" font-family="${F}" font-size="13" fill="#8896a0">${esc(state.axisUnit)}</text>`);
 
@@ -178,9 +226,9 @@ function svgMarkup(forExport){
   o.push(`<text transform="translate(${W-22},${(PT+PH/2).toFixed(1)}) rotate(90)" text-anchor="middle" font-family="${F}" font-size="15" font-weight="500" fill="#2b6ca3">降水量 (mm)</text>`);
   const ly=PB+64;
   o.push(`<line x1="${PL}" y1="${ly-5}" x2="${PL+26}" y2="${ly-5}" stroke="#c9432c" stroke-width="3.6"/><circle cx="${PL+13}" cy="${ly-5}" r="6.5" fill="#fbfcfa" stroke="#c9432c" stroke-width="3"/>`);
-  o.push(`<text x="${PL+34}" y="${ly}" font-family="${F}" font-size="14" fill="#525f68">月平均気温</text>`);
-  o.push(`<rect x="${PL+124}" y="${ly-14}" width="20" height="16" fill="#2b6ca3" opacity="0.86"/>`);
-  o.push(`<text x="${PL+152}" y="${ly}" font-family="${F}" font-size="14" fill="#525f68">月降水量</text>`);
+  o.push(`<text x="${PL+34}" y="${ly}" font-family="${F}" font-size="14" fill="#525f68">気温</text>`);
+  o.push(`<rect x="${PL+90}" y="${ly-14}" width="20" height="16" fill="#2b6ca3" opacity="0.86"/>`);
+  o.push(`<text x="${PL+118}" y="${ly}" font-family="${F}" font-size="14" fill="#525f68">降水量</text>`);
   o.push(`</svg>`);
   return o.join("");
 }
@@ -190,37 +238,91 @@ let raf=0;
 function render(){ if(raf) return; raf=requestAnimationFrame(()=>{raf=0;draw();}); }
 function draw(){
   document.getElementById("chart").innerHTML=svgMarkup(false);
-  const d=derive(), k=koppen();
-  document.getElementById("mLabel").textContent=state.labels[state.sel];
+  const d=derive();
+  document.getElementById("pickHeading").textContent=`えらんだ${state.axisUnit}をこまかく`;
+  document.getElementById("mLabel").textContent=labelUnit(state.sel);
   document.getElementById("vT").innerHTML=`${state.T[state.sel].toFixed(1)}<small>℃</small>`;
-  document.getElementById("vP").innerHTML=`${Math.round(state.P[state.sel])}<small>mm</small>`;
-  const su=summerIdx(), Psu=su.reduce((a,i)=>a+state.P[i],0);
-  const ratio=d.Pann>0?Math.round(Psu/d.Pann*100):0;
-  const S=[["年平均気温",d.Tann.toFixed(1),"℃"],["年降水量",Math.round(d.Pann),"mm"],
-    ["最暖月",`${d.hotM+1}月 ${d.Tmax.toFixed(1)}`,"℃"],["最寒月",`${d.coldM+1}月 ${d.Tmin.toFixed(1)}`,"℃"],
-    ["気温年較差",d.range.toFixed(1),"℃"],["夏半年の降水",ratio,"%"],
-    ["最多雨月",`${d.wetM+1}月 ${Math.round(Math.max(...state.P))}`,"mm"],
-    ["最少雨月",`${d.dryM+1}月 ${Math.round(Math.min(...state.P))}`,"mm"]];
-  document.getElementById("stats").innerHTML=S.map(([a,b,c])=>
-    `<div><dt>${a}</dt><dd class="mono">${b}<small>${c}</small></dd></div>`).join("");
-  document.getElementById("verdict").innerHTML=
-    `<div class="code">${esc(k.code)}</div><div class="jp">${esc(k.name)}</div><div class="why">${k.why.map(w=>"・"+w).join("<br>")}</div>`;
+  document.getElementById("vP").innerHTML=`${state.P[state.sel].toFixed(1)}<small>mm</small>`;
+
+  const koppenCard=document.getElementById("koppenCard");
+  if(state.scale==="year"){
+    koppenCard.hidden=false;
+    const k=koppen();
+    const su=summerIdx(), Psu=su.reduce((a,i)=>a+state.P[i],0);
+    const ratio=d.Pann>0?Math.round(Psu/d.Pann*100):0;
+    const S=[["年平均気温",d.Tann.toFixed(1),"℃"],["年降水量",d.Pann.toFixed(1),"mm"],
+      ["最暖月",`${d.hotM+1}月 ${d.Tmax.toFixed(1)}`,"℃"],["最寒月",`${d.coldM+1}月 ${d.Tmin.toFixed(1)}`,"℃"],
+      ["気温年較差",d.range.toFixed(1),"℃"],["夏半年の降水",ratio,"%"],
+      ["最多雨月",`${d.wetM+1}月 ${Math.max(...state.P).toFixed(1)}`,"mm"],
+      ["最少雨月",`${d.dryM+1}月 ${Math.min(...state.P).toFixed(1)}`,"mm"]];
+    document.getElementById("stats").innerHTML=S.map(([a,b,c])=>
+      `<div><dt>${a}</dt><dd class="mono">${b}<small>${c}</small></dd></div>`).join("");
+    document.getElementById("verdict").innerHTML=
+      `<div class="code">${esc(k.code)}</div><div class="jp">${esc(k.name)}</div><div class="why">${k.why.map(w=>"・"+w).join("<br>")}</div>`;
+  }else{
+    koppenCard.hidden=true;
+    const sumP=state.P.reduce((a,b)=>a+b,0);
+    const G=[["最高気温",`${labelUnit(d.hotM)} ${d.Tmax.toFixed(1)}`,"℃"],
+      ["最低気温",`${labelUnit(d.coldM)} ${d.Tmin.toFixed(1)}`,"℃"],
+      ["平均気温",d.Tann.toFixed(1),"℃"],
+      ["合計降水量",sumP.toFixed(1),"mm"]];
+    document.getElementById("stats").innerHTML=G.map(([a,b,c])=>
+      `<div><dt>${a}</dt><dd class="mono">${b}<small>${c}</small></dd></div>`).join("");
+  }
   document.getElementById("undo").disabled=history.length===0;
   save();
 }
 function buildTable(){
-  const cells=n=>state.labels.map((m,i)=>`<td><input type="number" inputmode="decimal" data-k="${n}" data-i="${i}" step="${n==='T'?0.1:1}" value="${n==='T'?state.T[i].toFixed(1):Math.round(state.P[i])}" aria-label="${m}の${n==='T'?'気温':'降水量'}"></td>`).join("");
+  const cells=n=>state.labels.map((_,i)=>`<td><input type="number" inputmode="decimal" data-k="${n}" data-i="${i}" step="0.1" value="${(n==='T'?state.T[i]:state.P[i]).toFixed(1)}" aria-label="${labelUnit(i)}の${n==='T'?'気温':'降水量'}"></td>`).join("");
   document.getElementById("tblwrap").innerHTML=
-    `<table class="grid"><thead><tr><th class="rh"></th>${state.labels.map(m=>`<th>${m}</th>`).join("")}</tr></thead>
+    `<table class="grid"><thead><tr><th class="rh"></th>${state.labels.map((_,i)=>`<th>${esc(labelUnit(i))}</th>`).join("")}</tr></thead>
      <tbody><tr><th class="rh">気温 ℃</th>${cells("T")}</tr><tr><th class="rh">降水量 mm</th>${cells("P")}</tr></tbody></table>`;
 }
 
 /* ---------- history & storage ---------- */
-function push(){ history.push({T:state.T.slice(),P:state.P.slice(),name:state.name}); if(history.length>50)history.shift(); }
-function save(){ try{ localStorage.setItem("climograph-v1",JSON.stringify(state)); }catch(e){} }
+function push(){
+  history.push({scale:state.scale,monthOf:state.monthOf,N:state.N,labels:state.labels.slice(),axisUnit:state.axisUnit,
+    T:state.T.slice(),P:state.P.slice(),name:state.name,sel:state.sel});
+  if(history.length>50)history.shift();
+}
+function save(){
+  saveCurrentToCache();
+  try{
+    localStorage.setItem("climograph-v2",JSON.stringify({
+      scale:state.scale,monthOf:state.monthOf,byScale:state.byScale,
+      name:state.name,hemi:state.hemi,tMin:state.tMin,tMax:state.tMax,pMax:state.pMax,
+      mode:state.mode,trace:state.trace,showValues:state.showValues,lastPreset:state.lastPreset,sel:state.sel
+    }));
+  }catch(e){}
+}
 function load(){
-  try{ const s=JSON.parse(localStorage.getItem("climograph-v1")||"null");
-    if(s&&Array.isArray(s.T)&&s.T.length===12&&Array.isArray(s.P)&&s.P.length===12) Object.assign(state,s,{sel:clamp(s.sel|0,0,state.N-1)});
+  try{
+    const raw=localStorage.getItem("climograph-v2");
+    if(raw){
+      const s=JSON.parse(raw);
+      if(s&&s.byScale){
+        state.byScale=s.byScale; state.monthOf=s.monthOf|0;
+        state.name=s.name??state.name; state.hemi=s.hemi||state.hemi;
+        state.tMin=s.tMin??state.tMin; state.tMax=s.tMax??state.tMax; state.pMax=s.pMax??state.pMax;
+        state.mode=s.mode||state.mode; state.trace=s.trace??state.trace; state.showValues=s.showValues??state.showValues;
+        state.lastPreset=s.lastPreset||state.lastPreset;
+        const scale=s.scale||"year", shape=scaleShape(scale,state.monthOf);
+        const cached=cacheGet(scale,state.monthOf)||defaultData(scale,state.monthOf);
+        state.scale=scale; state.N=shape.N; state.labels=shape.labels; state.axisUnit=shape.axisUnit;
+        state.T=cached.T.slice(); state.P=cached.P.slice(); state.sel=clamp(s.sel|0,0,shape.N-1);
+        return;
+      }
+    }
+    const v1=JSON.parse(localStorage.getItem("climograph-v1")||"null");
+    if(v1&&Array.isArray(v1.T)&&v1.T.length===12&&Array.isArray(v1.P)&&v1.P.length===12){
+      state.byScale.year={T:v1.T.slice(),P:v1.P.slice(),sel:clamp(v1.sel|0,0,11)};
+      state.name=v1.name??state.name; state.hemi=v1.hemi||state.hemi;
+      state.tMin=v1.tMin??state.tMin; state.tMax=v1.tMax??state.tMax; state.pMax=v1.pMax??state.pMax;
+      state.mode=v1.mode||state.mode; state.trace=v1.trace??state.trace; state.showValues=v1.showValues??state.showValues;
+      state.lastPreset=v1.lastPreset||state.lastPreset;
+      state.scale="year"; state.N=12; state.labels=MONTHS.slice(); state.axisUnit="月";
+      state.T=state.byScale.year.T.slice(); state.P=state.byScale.year.P.slice(); state.sel=state.byScale.year.sel;
+    }
   }catch(e){}
 }
 
@@ -234,8 +336,8 @@ function local(e){
   return {x:(e.clientX-r.left-(r.width-W*sc)/2)/sc, y:(e.clientY-r.top-(r.height-H*sc)/2)/sc};
 }
 function apply(kind,i,y){
-  if(kind==="temp") state.T[i]=Math.round(clamp(tFromY(y),state.tMin,state.tMax)*2)/2;
-  else state.P[i]=Math.round(clamp(pFromY(y),0,state.pMax)/5)*5;
+  if(kind==="temp") state.T[i]=Math.round(clamp(tFromY(y),state.tMin,state.tMax)*10)/10;
+  else state.P[i]=Math.round(clamp(pFromY(y),0,state.pMax)*10)/10;
 }
 wrap.addEventListener("pointerdown",e=>{
   if(drag) return;
@@ -278,7 +380,8 @@ function loadPreset(k){
   push(); state.name=k; state.T=d.T.slice(); state.P=d.P.slice();
   state.hemi=d.h; state.pMax=d.pMax; state.lastPreset=k;
   state.tMin=Math.min(...d.T)<-25?-40:-30; state.tMax=30;
-  state.scale="year"; state.N=12; state.labels=MONTHS.slice(); state.axisUnit="月";
+  state.scale="year"; state.N=12; state.labels=MONTHS.slice(); state.axisUnit="月"; state.monthOf=0;
+  state.byScale={month:{}};
   syncInputs(); buildTable(); render();
 }
 $("preset").addEventListener("change",e=>{ if(e.target.value){loadPreset(e.target.value); e.target.value="";} });
@@ -293,10 +396,16 @@ $("mPrev").addEventListener("click",()=>{state.sel=(state.sel+state.N-1)%state.N
 $("mNext").addEventListener("click",()=>{state.sel=(state.sel+1)%state.N;render();});
 document.querySelectorAll("[data-adj]").forEach(b=>b.addEventListener("click",()=>{
   push(); const d=+b.dataset.d;
-  if(b.dataset.adj==="t") state.T[state.sel]=Math.round(clamp(state.T[state.sel]+d,-60,60)*2)/2;
-  else state.P[state.sel]=clamp(Math.round(state.P[state.sel]+d),0,3000);
+  if(b.dataset.adj==="t") state.T[state.sel]=Math.round(clamp(state.T[state.sel]+d,-60,60)*10)/10;
+  else state.P[state.sel]=Math.round(clamp(state.P[state.sel]+d,0,3000)*10)/10;
   buildTable(); render();
 }));
+$("scaleSeg").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  switchScale(b.dataset.scale); syncInputs(); buildTable(); render();
+});
+$("moPrev").addEventListener("click",()=>{ switchScale("month",(state.monthOf+11)%12); syncInputs(); buildTable(); render(); });
+$("moNext").addEventListener("click",()=>{ switchScale("month",(state.monthOf+1)%12); syncInputs(); buildTable(); render(); });
 $("autoScale").addEventListener("click",()=>{
   const pm=Math.max(...state.P), tn=Math.min(...state.T), tx=Math.max(...state.T);
   state.pMax=[300,600,900,1200,1800].find(v=>v>=pm)||2400;
@@ -310,7 +419,7 @@ document.addEventListener("input",e=>{
   const t=e.target; if(!t.matches("table.grid input")) return;
   const i=+t.dataset.i, v=parseFloat(t.value);
   if(Number.isNaN(v)) return;
-  if(t.dataset.k==="T") state.T[i]=clamp(v,-70,60); else state.P[i]=clamp(v,0,3000);
+  if(t.dataset.k==="T") state.T[i]=Math.round(clamp(v,-70,60)*10)/10; else state.P[i]=Math.round(clamp(v,0,3000)*10)/10;
   state.sel=i; render();
 });
 document.addEventListener("focusin",e=>{ if(e.target.matches("table.grid input")) push(); });
@@ -340,6 +449,9 @@ function syncInputs(){
   document.querySelectorAll("#mode button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.mode===state.mode)));
   $("tgTrace").setAttribute("aria-pressed",String(state.trace));
   $("tgVals").setAttribute("aria-pressed",String(state.showValues));
+  document.querySelectorAll("#scaleSeg button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.scale===state.scale)));
+  $("monthOfNav").hidden=state.scale!=="month";
+  if(state.scale==="month") $("moLabel").textContent=`${MONTHS[state.monthOf]}（${DAYS_IN_MONTH[state.monthOf]}日）`;
 }
 
 /* ---------- screens ---------- */
