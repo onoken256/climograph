@@ -43,6 +43,6 @@ ${script}
 </script>
 `;
 
-const outPath = path.join(ROOT, "climograph.html");
+const outPath = path.join(ROOT, "index.html");
 fs.writeFileSync(outPath, out);
 console.log(`built ${path.relative(ROOT, outPath)} (${(out.length / 1024).toFixed(1)} KB)`);
