@@ -291,13 +291,17 @@ const PRESETS={
 };
 
 const state={name:"東京",T:PRESETS["東京"].T.slice(),P:PRESETS["東京"].P.slice(),
- hemi:"N",tMin:-30,tMax:30,pMax:600,mode:"auto",trace:true,showValues:false,sel:0,lastPreset:"東京"};
+ hemi:"N",tMin:-30,tMax:30,pMax:600,mode:"auto",trace:true,showValues:false,sel:0,lastPreset:"東京",
+ scale:"year",N:12,labels:MONTHS.slice(),axisUnit:"月"};
 const history=[];
 
-/* ---------- geometry ---------- */
+/* ---------- geometry ----------
+   時間軸の項目数は state.N（可変）。年間=12・月間=その月の日数・日毎=24 を想定するが、
+   このフェーズでは state.N=12 固定（年間のみ）で現状の見た目・挙動を維持する。 */
 const W=1020,H=700,PL=88,PR=924,PT=96,PB=614;
-const CW=(PR-PL)/12, PH=PB-PT;
-const xc=i=>PL+(i+0.5)*CW;
+const PH=PB-PT;
+const CW=()=>(PR-PL)/state.N;
+const xc=i=>PL+(i+0.5)*CW();
 const yT=t=>PB-(t-state.tMin)/(state.tMax-state.tMin)*PH;
 const yP=p=>PB-(p/state.pMax)*PH;
 const tFromY=y=>state.tMin+(PB-y)/PH*(state.tMax-state.tMin);
@@ -311,7 +315,7 @@ const FM="'IBM Plex Mono',ui-monospace,Menlo,monospace";
 function summerIdx(){return state.hemi==="N"?[3,4,5,6,7,8]:[9,10,11,0,1,2];}
 function derive(){
   const T=state.T,P=state.P;
-  const Tann=T.reduce((a,b)=>a+b,0)/12, Pann=P.reduce((a,b)=>a+b,0);
+  const Tann=T.reduce((a,b)=>a+b,0)/T.length, Pann=P.reduce((a,b)=>a+b,0);
   const Tmax=Math.max(...T),Tmin=Math.min(...T);
   return {Tann,Pann,Tmax,Tmin,
     hotM:T.indexOf(Tmax),coldM:T.indexOf(Tmin),
@@ -320,7 +324,7 @@ function derive(){
 }
 function koppen(){
   const T=state.T,P=state.P,d=derive();
-  const su=summerIdx(), wi=[...Array(12).keys()].filter(i=>!su.includes(i));
+  const su=summerIdx(), wi=[...Array(T.length).keys()].filter(i=>!su.includes(i));
   const Psu=su.reduce((a,i)=>a+P[i],0), Pwi=wi.reduce((a,i)=>a+P[i],0);
   const r=d.Pann>0?Psu/d.Pann:0.5;
   let th, dist;
@@ -384,11 +388,12 @@ function svgMarkup(forExport){
   o.push(`<text x="${PR}" y="44" text-anchor="end" font-family="${FM}" font-size="27" font-weight="600" fill="#2b6ca3">${esc(k.code)}</text>`);
   o.push(`<text x="${PR}" y="70" text-anchor="end" font-family="${F}" font-size="14.5" fill="#66737c">${esc(k.name)}・${state.hemi==="N"?"北半球":"南半球"}</text>`);
 
-  // selected month band
-  o.push(`<rect x="${(PL+state.sel*CW).toFixed(1)}" y="${PT}" width="${CW.toFixed(1)}" height="${PH}" fill="#2b6ca3" opacity="0.055"/>`);
+  // selected column band
+  const cw=CW();
+  o.push(`<rect x="${(PL+state.sel*cw).toFixed(1)}" y="${PT}" width="${cw.toFixed(1)}" height="${PH}" fill="#2b6ca3" opacity="0.055"/>`);
 
   // column separators
-  for(let i=1;i<12;i++) o.push(`<line x1="${(PL+i*CW).toFixed(1)}" y1="${PT}" x2="${(PL+i*CW).toFixed(1)}" y2="${PB}" stroke="#e4eae7" stroke-width="1"/>`);
+  for(let i=1;i<state.N;i++) o.push(`<line x1="${(PL+i*cw).toFixed(1)}" y1="${PT}" x2="${(PL+i*cw).toFixed(1)}" y2="${PB}" stroke="#e4eae7" stroke-width="1"/>`);
 
   // horizontal grid on temperature ticks
   for(let t=state.tMin;t<=state.tMax+.001;t+=tStep){
@@ -406,8 +411,8 @@ function svgMarkup(forExport){
   o.push(`<rect x="${PL}" y="${PT}" width="${PR-PL}" height="${PH}" fill="none" stroke="#9fb3bd" stroke-width="1.6"/>`);
 
   // bars
-  const bw=42;
-  for(let i=0;i<12;i++){
+  const bw=Math.min(42,cw*0.66);
+  for(let i=0;i<state.N;i++){
     const v=clamp(state.P[i],0,state.pMax), over=state.P[i]>state.pMax;
     const y=yP(v), h=Math.max(0,PB-y);
     if(h>0.4){
@@ -420,13 +425,13 @@ function svgMarkup(forExport){
   // temperature line
   const pts=state.T.map((t,i)=>`${xc(i).toFixed(1)},${clamp(yT(t),PT-40,PB+40).toFixed(1)}`).join(" ");
   o.push(`<polyline points="${pts}" fill="none" stroke="#c9432c" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round"/>`);
-  for(let i=0;i<12;i++){
+  for(let i=0;i<state.N;i++){
     const y=clamp(yT(state.T[i]),PT-40,PB+40), r=(i===state.sel&&!forExport)?11:8;
     o.push(`<circle cx="${xc(i).toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="#fbfcfa" stroke="#c9432c" stroke-width="3.4"/>`);
   }
 
   // value labels
-  for(let i=0;i<12;i++){
+  for(let i=0;i<state.N;i++){
     if(!state.showValues && !(i===state.sel && !forExport)) continue;
     const pv=state.P[i], py=yP(clamp(pv,0,state.pMax)), tall=PB-py>34;
     o.push(`<text x="${xc(i).toFixed(1)}" y="${(tall?py+22:py-10).toFixed(1)}" text-anchor="middle" font-family="${FM}" font-size="14" font-weight="600" fill="${tall?"#ffffff":"#2b6ca3"}">${Math.round(pv)}</text>`);
@@ -434,12 +439,14 @@ function svgMarkup(forExport){
     o.push(`<text x="${xc(i).toFixed(1)}" y="${(above?ty-19:ty+29).toFixed(1)}" text-anchor="middle" font-family="${FM}" font-size="14" font-weight="600" fill="#c9432c" stroke="#fbfcfa" stroke-width="3.5" paint-order="stroke">${state.T[i].toFixed(1)}</text>`);
   }
 
-  // month labels
-  for(let i=0;i<12;i++){
+  // column labels（項目数が多いときは間引く。ただし最初・最後・選択中は必ず出す）
+  const showLabel=i=>state.N<24||i===0||i===state.N-1||i===state.sel||i%5===0;
+  for(let i=0;i<state.N;i++){
+    if(!showLabel(i)) continue;
     const on=i===state.sel;
-    o.push(`<text x="${xc(i).toFixed(1)}" y="${PB+30}" text-anchor="middle" font-family="${F}" font-size="16" font-weight="${on?700:400}" fill="${on?"#1e242a":"#66737c"}">${i+1}</text>`);
+    o.push(`<text x="${xc(i).toFixed(1)}" y="${PB+30}" text-anchor="middle" font-family="${F}" font-size="16" font-weight="${on?700:400}" fill="${on?"#1e242a":"#66737c"}">${esc(state.labels[i])}</text>`);
   }
-  o.push(`<text x="${PL-14}" y="${PB+30}" text-anchor="end" font-family="${F}" font-size="13" fill="#8896a0">月</text>`);
+  o.push(`<text x="${PL-14}" y="${PB+30}" text-anchor="end" font-family="${F}" font-size="13" fill="#8896a0">${esc(state.axisUnit)}</text>`);
 
   // axis titles + legend
   o.push(`<text transform="translate(28,${(PT+PH/2).toFixed(1)}) rotate(-90)" text-anchor="middle" font-family="${F}" font-size="15" font-weight="500" fill="#c9432c">気温 (℃)</text>`);
@@ -459,7 +466,7 @@ function render(){ if(raf) return; raf=requestAnimationFrame(()=>{raf=0;draw();}
 function draw(){
   document.getElementById("chart").innerHTML=svgMarkup(false);
   const d=derive(), k=koppen();
-  document.getElementById("mLabel").textContent=MONTHS[state.sel];
+  document.getElementById("mLabel").textContent=state.labels[state.sel];
   document.getElementById("vT").innerHTML=`${state.T[state.sel].toFixed(1)}<small>℃</small>`;
   document.getElementById("vP").innerHTML=`${Math.round(state.P[state.sel])}<small>mm</small>`;
   const su=summerIdx(), Psu=su.reduce((a,i)=>a+state.P[i],0);
@@ -477,9 +484,9 @@ function draw(){
   save();
 }
 function buildTable(){
-  const cells=n=>MONTHS.map((m,i)=>`<td><input type="number" inputmode="decimal" data-k="${n}" data-i="${i}" step="${n==='T'?0.1:1}" value="${n==='T'?state.T[i].toFixed(1):Math.round(state.P[i])}" aria-label="${m}の${n==='T'?'気温':'降水量'}"></td>`).join("");
+  const cells=n=>state.labels.map((m,i)=>`<td><input type="number" inputmode="decimal" data-k="${n}" data-i="${i}" step="${n==='T'?0.1:1}" value="${n==='T'?state.T[i].toFixed(1):Math.round(state.P[i])}" aria-label="${m}の${n==='T'?'気温':'降水量'}"></td>`).join("");
   document.getElementById("tblwrap").innerHTML=
-    `<table class="grid"><thead><tr><th class="rh"></th>${MONTHS.map(m=>`<th>${m}</th>`).join("")}</tr></thead>
+    `<table class="grid"><thead><tr><th class="rh"></th>${state.labels.map(m=>`<th>${m}</th>`).join("")}</tr></thead>
      <tbody><tr><th class="rh">気温 ℃</th>${cells("T")}</tr><tr><th class="rh">降水量 mm</th>${cells("P")}</tr></tbody></table>`;
 }
 
@@ -488,7 +495,7 @@ function push(){ history.push({T:state.T.slice(),P:state.P.slice(),name:state.na
 function save(){ try{ localStorage.setItem("climograph-v1",JSON.stringify(state)); }catch(e){} }
 function load(){
   try{ const s=JSON.parse(localStorage.getItem("climograph-v1")||"null");
-    if(s&&Array.isArray(s.T)&&s.T.length===12&&Array.isArray(s.P)&&s.P.length===12) Object.assign(state,s,{sel:clamp(s.sel|0,0,11)});
+    if(s&&Array.isArray(s.T)&&s.T.length===12&&Array.isArray(s.P)&&s.P.length===12) Object.assign(state,s,{sel:clamp(s.sel|0,0,state.N-1)});
   }catch(e){}
 }
 
@@ -509,7 +516,7 @@ wrap.addEventListener("pointerdown",e=>{
   if(drag) return;
   const p=local(e); if(!p) return;
   if(p.x<PL-24||p.x>PR+24||p.y<PT-40||p.y>PB+46) return;
-  const i=clamp(Math.floor((p.x-PL)/CW),0,11);
+  const i=clamp(Math.floor((p.x-PL)/CW()),0,state.N-1);
   let kind=state.mode;
   if(kind==="auto"){
     const dT=Math.hypot(p.x-xc(i),p.y-clamp(yT(state.T[i]),PT,PB));
@@ -524,7 +531,7 @@ wrap.addEventListener("pointerdown",e=>{
 wrap.addEventListener("pointermove",e=>{
   if(!drag) return;
   const p=local(e); if(!p) return;
-  const i=clamp(Math.floor((p.x-PL)/CW),0,11);
+  const i=clamp(Math.floor((p.x-PL)/CW()),0,state.N-1);
   if(state.trace&&i!==drag.last){
     const step=i>drag.last?1:-1;
     for(let j=drag.last+step;j!==i+step;j+=step) apply(drag.kind,j,p.y);
@@ -546,6 +553,7 @@ function loadPreset(k){
   push(); state.name=k; state.T=d.T.slice(); state.P=d.P.slice();
   state.hemi=d.h; state.pMax=d.pMax; state.lastPreset=k;
   state.tMin=Math.min(...d.T)<-25?-40:-30; state.tMax=30;
+  state.scale="year"; state.N=12; state.labels=MONTHS.slice(); state.axisUnit="月";
   syncInputs(); buildTable(); render();
 }
 $("preset").addEventListener("change",e=>{ if(e.target.value){loadPreset(e.target.value); e.target.value="";} });
@@ -556,8 +564,8 @@ $("tRange").addEventListener("change",e=>{const[a,b]=e.target.value.split(",").m
 $("mode").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;state.mode=b.dataset.mode;syncInputs();});
 $("tgTrace").addEventListener("click",()=>{state.trace=!state.trace;syncInputs();});
 $("tgVals").addEventListener("click",()=>{state.showValues=!state.showValues;syncInputs();render();});
-$("mPrev").addEventListener("click",()=>{state.sel=(state.sel+11)%12;render();});
-$("mNext").addEventListener("click",()=>{state.sel=(state.sel+1)%12;render();});
+$("mPrev").addEventListener("click",()=>{state.sel=(state.sel+state.N-1)%state.N;render();});
+$("mNext").addEventListener("click",()=>{state.sel=(state.sel+1)%state.N;render();});
 document.querySelectorAll("[data-adj]").forEach(b=>b.addEventListener("click",()=>{
   push(); const d=+b.dataset.d;
   if(b.dataset.adj==="t") state.T[state.sel]=Math.round(clamp(state.T[state.sel]+d,-60,60)*2)/2;
@@ -571,7 +579,7 @@ $("autoScale").addEventListener("click",()=>{
   syncInputs(); render();
 });
 $("undo").addEventListener("click",()=>{ const h=history.pop(); if(!h)return; Object.assign(state,h); syncInputs(); buildTable(); render(); });
-$("blank").addEventListener("click",()=>{ push(); state.T=Array(12).fill(0); state.P=Array(12).fill(0); state.name="　"; syncInputs(); buildTable(); render(); });
+$("blank").addEventListener("click",()=>{ push(); state.T=Array(state.N).fill(0); state.P=Array(state.N).fill(0); state.name="　"; syncInputs(); buildTable(); render(); });
 $("reset").addEventListener("click",()=>loadPreset(state.lastPreset));
 document.addEventListener("input",e=>{
   const t=e.target; if(!t.matches("table.grid input")) return;
