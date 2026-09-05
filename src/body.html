@@ -1,0 +1,97 @@
+<div class="app">
+  <div class="topbar">
+    <div class="brand"><h1>雨温図メーカー</h1><span class="mono">CLIMOGRAPH</span></div>
+    <label class="field" style="max-width:190px"><span>地点名</span><input type="text" id="name" autocomplete="off"></label>
+    <label class="field" style="max-width:210px"><span>地点データ</span><select id="preset"></select></label>
+    <label class="field" style="max-width:120px"><span>半球</span>
+      <select id="hemi"><option value="N">北半球</option><option value="S">南半球</option></select>
+    </label>
+  </div>
+
+  <div class="stage">
+    <div class="sheetwrap"><div id="chart" style="width:100%;display:flex;justify-content:center"></div></div>
+
+    <div class="rail">
+      <div class="card">
+        <h2>ゆびで かく</h2>
+        <div class="seg" id="mode" role="group" aria-label="編集モード">
+          <button data-mode="auto" type="button">自動</button>
+          <button data-mode="temp" type="button">気温だけ</button>
+          <button data-mode="prec" type="button">降水量だけ</button>
+        </div>
+        <div class="toggles">
+          <button class="tg" id="tgTrace" type="button"><span class="dot"></span>なぞり描き</button>
+          <button class="tg" id="tgVals" type="button"><span class="dot"></span>数値を表示</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>えらんだ月をこまかく</h2>
+        <div class="monthnav">
+          <button class="rnd" id="mPrev" type="button" style="width:44px" aria-label="前の月">‹</button>
+          <div class="mlabel" id="mLabel">1月</div>
+          <button class="rnd" id="mNext" type="button" style="width:44px" aria-label="次の月">›</button>
+        </div>
+        <p class="stepkey t"><b>■</b> 気温</p>
+        <div class="step">
+          <button class="rnd" data-adj="t" data-d="-0.5" type="button">−</button>
+          <div class="val mono" id="vT">0.0<small>℃</small></div>
+          <button class="rnd" data-adj="t" data-d="0.5" type="button">＋</button>
+        </div>
+        <p class="stepkey p"><b>■</b> 降水量</p>
+        <div class="step">
+          <button class="rnd" data-adj="p" data-d="-5" type="button">−</button>
+          <div class="val mono" id="vP">0<small>mm</small></div>
+          <button class="rnd" data-adj="p" data-d="5" type="button">＋</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>読みとり</h2>
+        <dl class="stats" id="stats"></dl>
+      </div>
+
+      <div class="card">
+        <h2>ケッペンの気候区分</h2>
+        <div class="verdict" id="verdict"></div>
+      </div>
+
+      <div class="card">
+        <h2>目もり</h2>
+        <div class="row">
+          <label class="field"><span>降水量の上限</span>
+            <select id="pMax"><option value="300">300 mm</option><option value="600">600 mm</option><option value="900">900 mm</option><option value="1200">1200 mm</option></select>
+          </label>
+          <label class="field"><span>気温の範囲</span>
+            <select id="tRange"><option value="-30,30">-30〜30℃</option><option value="-40,30">-40〜30℃</option><option value="-10,40">-10〜40℃</option><option value="0,30">0〜30℃</option></select>
+          </label>
+        </div>
+        <div class="row"><button class="act" id="autoScale" type="button" style="flex:1">データに合わせる</button></div>
+      </div>
+
+      <div class="card">
+        <div class="acts">
+          <button class="act" id="undo" type="button">元にもどす</button>
+          <button class="act" id="blank" type="button">白紙にする</button>
+          <button class="act" id="reset" type="button">読みこみ直す</button>
+          <button class="act primary" id="png" type="button">画像にする</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <details class="tbl">
+          <summary>数値を直接入力する（平年値の表）</summary>
+          <div class="tblscroll" id="tblwrap"></div>
+        </details>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="box">
+    <img id="pngImg" alt="作成した雨温図">
+    <p>画像を<b>長押し</b>して「“写真”に保存」を選ぶと、iPadのカメラロールに保存できます。パソコンでは右クリックから保存してください。</p>
+    <button class="act primary" id="closeModal" type="button" style="width:100%">閉じる</button>
+  </div>
+</div>
